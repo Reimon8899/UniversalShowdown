@@ -1,0 +1,235 @@
+import pygame
+import textwrap
+import random
+import ollama
+import os
+import sys
+
+def inicializar_modelo():
+    try:
+        print("⚙️ Cargando modelo Llama 3...")
+        ollama.generate(model="llama3", prompt="Inicializando")  # Warm-up
+        print("✅ Modelo listo")
+    except Exception as e:
+        print(f"❌ Error al cargar el modelo: {e}")
+# Configuración inicial de personajes
+PERSONAJES = {
+    "Arturo": {
+        "descripcion": "Maestro de la psicología erótica y manipulación mental.",
+        "vida_max": 100,
+        "frase": "'¿Eso es todo lo que tienes? Qué... aburrido'",
+        "color": (70, 130, 180)  # Azul acero
+    },
+    "JFRuiz": {
+        "descripcion": "Guerrero imparable con resistencia sobrehumana.",
+        "vida_max": 150,
+        "frase": "'¡Puedes golpearme mil veces, pero sólo necesito una!'",
+        "color": (178, 34, 34)  # Rojo fuego
+    },
+    "Valeria": {
+        "descripcion": "Asesina sigilosa con dagas envenenadas.",
+        "vida_max": 80,
+        "frase": "'La oscuridad es mi aliada...'",
+        "color": (75, 0, 130)  # Índigo
+    },
+    "Drakar": {
+        "descripcion": "Bárbaro colérico con hacha de doble filo.",
+        "vida_max": 180,
+        "frase": "'¡SANGRE Y FURIA!'",
+        "color": (220, 20, 60)  # Rojo carmesí
+    }
+}
+
+# Configuración de pantalla
+WIDTH, HEIGHT = 1000, 800
+MAX_LINE_LENGTH = 78
+MAX_VISIBLE_LINES = 12
+COLORS = {
+    "background": (240, 240, 245),
+    "text": (30, 30, 35),
+    "highlight": (220, 220, 255)
+}
+
+# Inicialización de pygame
+pygame.init()
+screen = pygame.display.set_mode((WIDTH, HEIGHT))
+pygame.display.set_caption("Batalla Épica Multijugador")
+font = pygame.font.SysFont("Arial", 22)
+clock = pygame.time.Clock()
+
+# Función para selección aleatoria de personajes
+def seleccionar_personajes_aleatorio():
+    personajes_disponibles = list(PERSONAJES.keys())
+    p1, p2 = random.sample(personajes_disponibles, 2)
+    print(f"\n¡Personajes seleccionados aleatoriamente!")
+    print(f"Jugador 1: {p1} - {PERSONAJES[p1]['frase']}")
+    print(f"Jugador 2: {p2} - {PERSONAJES[p2]['frase']}")
+    return p1, p2
+
+# Función para inicializar el estado del juego
+def inicializar_estado(personaje1, personaje2):
+    return {
+        "turno": 0,
+        "historial": [
+            f"La batalla comienza entre {personaje1} y {personaje2}",
+            f"{personaje1}: {PERSONAJES[personaje1]['frase']}",
+            f"{personaje2}: {PERSONAJES[personaje2]['frase']}",
+            "¡El combate está por comenzar!"
+        ],
+        "combate_activo": True,
+        "ganador": None,
+        "contexto_combate": "Un coliseo abandonado bajo una tormenta eléctrica",
+        "combatientes": [personaje1, personaje2],
+        "vidas": {
+            personaje1: PERSONAJES[personaje1]["vida_max"],
+            personaje2: PERSONAJES[personaje2]["vida_max"]
+        }
+    }
+
+# En la parte de generación de narrativa, reemplaza la función con esta versión mejorada:
+
+import requests  # Asegúrate de tener instalada la librería: pip install requests
+
+def generar_narrativa(estado):
+    atacante = estado["combatientes"][estado["turno"] % 2]
+    defensor = estado["combatientes"][(estado["turno"] + 1) % 2]
+    
+    prompt = f"""**Narra el Turno {estado['turno'] + 1}**:
+    - Personajes: {atacante} (ataca) vs {defensor} (defiende)
+    - Estilo: Combate épico tipo anime shonen
+    - Requisitos:
+      * 2 frases máximo, en español
+      * 1 diálogo entre comillas (ej: "¡Derribaré tus defensas!")
+      * Incluye 1 técnica creativa (ej: "Furia Dragón Celestial")
+      * Usa un maximo de 20 palabras
+      * No es necesario que pongas el turno, solo la narracion
+    - Ejemplo: "Con un salto imposible, {atacante} desencadena su 'Onda Sísmica Carmesí'. '¡Ni tus huesos quedarán en pie!', mientras la tormenta electrifica el coliseo..."
+    
+    **Narración requerida:**"""
+    
+    try:
+        response = ollama.generate(
+            model="llama3",
+            prompt=prompt,
+            options={
+                "temperature": 0.7,  # Creatividad (0-1)
+                "num_predict": 150   # Tokens máximos
+            }
+        )
+        narrativa = response["response"]
+        return textwrap.wrap(narrativa, MAX_LINE_LENGTH)
+    
+    except Exception as e:
+        print(f"⚠️ Error generando texto: {e}")
+        return [f"{atacante} lanza un ataque brutal contra {defensor}!"]
+# Sistema de combate
+def ejecutar_turno(estado):
+    atacante = estado["combatientes"][estado["turno"] % 2]
+    defensor = estado["combatientes"][(estado["turno"] + 1) % 2]
+    
+    # Generar narrativa
+    lineas_narracion = generar_narrativa(estado)
+    estado["historial"].extend(lineas_narracion)
+    
+    # Calcular daño (balanceado según vida máxima)
+    dano_base = random.randint(8, 12)
+    dano = int(dano_base * (PERSONAJES[defensor]["vida_max"] / 100))
+    estado["vidas"][defensor] -= dano
+    
+    # Verificar fin del combate
+    if estado["vidas"][defensor] <= 0:
+        estado["vidas"][defensor] = 0
+        estado["combate_activo"] = False
+        estado["ganador"] = atacante
+        estado["historial"].append(f"¡{atacante} se alza victorioso con {estado['vidas'][atacante]} de vida restante!")
+    
+    estado["turno"] += 1
+
+# Dibujar interfaz gráfica
+def dibujar_interfaz(estado):
+    screen.fill(COLORS["background"])
+    p1, p2 = estado["combatientes"]
+    
+    # Panel de narración
+    panel = pygame.Surface((WIDTH - 40, MAX_VISIBLE_LINES * 28 + 20), pygame.SRCALPHA)
+    panel.fill((*COLORS["highlight"], 150))
+    screen.blit(panel, (20, 100))
+    
+    # Historial de combate
+    y_offset = 110
+    for linea in estado["historial"][-MAX_VISIBLE_LINES:]:
+        color = next(
+            (PERSONAJES[p]["color"] for p in PERSONAJES if p in linea),
+            COLORS["text"]
+        )
+        text_surface = font.render(linea, True, color)
+        screen.blit(text_surface, (30, y_offset))
+        y_offset += 28
+    
+    # Barras de vida
+    def dibujar_barra_vida(x, y, vida, max_vida, color):
+        ancho = 200
+        pygame.draw.rect(screen, (*color, 100), (x, y, ancho, 20), 0)
+        pygame.draw.rect(screen, color, (x, y, ancho * (vida/max_vida), 20), 0)
+        pygame.draw.rect(screen, COLORS["text"], (x, y, ancho, 20), 2)
+        texto = font.render(f"{vida}/{max_vida}", True, COLORS["text"])
+        screen.blit(texto, (x + ancho + 10, y))
+    
+    dibujar_barra_vida(50, 50, estado["vidas"][p1], PERSONAJES[p1]["vida_max"], PERSONAJES[p1]["color"])
+    dibujar_barra_vida(750, 50, estado["vidas"][p2], PERSONAJES[p2]["vida_max"], PERSONAJES[p2]["color"])
+    
+    # Nombres de personajes
+    nombre1 = font.render(p1, True, PERSONAJES[p1]["color"])
+    nombre2 = font.render(p2, True, PERSONAJES[p2]["color"])
+    screen.blit(nombre1, (50, 30))
+    screen.blit(nombre2, (750, 30))
+    
+    # Turno actual
+    turno_text = font.render(f"Turno: {estado['turno']}", True, COLORS["text"])
+    screen.blit(turno_text, (WIDTH//2 - turno_text.get_width()//2, 50))
+    
+    # Controles
+    controles = font.render("ESPACIO: Siguiente turno | R: Reiniciar | ESC: Salir", True, COLORS["text"])
+    screen.blit(controles, (WIDTH//2 - controles.get_width()//2, HEIGHT - 30))
+    
+    # Fin del combate
+    if not estado["combate_activo"]:
+        fin_text = pygame.font.SysFont("Arial", 36).render(
+            f"¡{estado['ganador']} gana el combate!", 
+            True, 
+            PERSONAJES[estado["ganador"]]["color"]
+        )
+        screen.blit(fin_text, (WIDTH//2 - fin_text.get_width()//2, HEIGHT//2))
+
+# Función principal
+def main():
+    # Selección aleatoria de personajes
+    p1, p2 = seleccionar_personajes_aleatorio()
+    
+    # Inicializar estado
+    estado = inicializar_estado(p1, p2)
+    
+    # Bucle principal
+    running = True
+    while running:
+        for event in pygame.event.get():
+            if event.type == pygame.QUIT:
+                running = False
+            elif event.type == pygame.KEYDOWN:
+                if event.key == pygame.K_SPACE and estado["combate_activo"]:
+                    ejecutar_turno(estado)
+                elif event.key == pygame.K_r:  # Reiniciar
+                    p1, p2 = seleccionar_personajes_aleatorio()
+                    estado = inicializar_estado(p1, p2)
+                elif event.key == pygame.K_ESCAPE:
+                    running = False
+        
+        dibujar_interfaz(estado)
+        pygame.display.flip()
+        clock.tick(60)
+    
+    pygame.quit()
+
+if __name__ == "__main__":
+    inicializar_modelo()
+    main()
